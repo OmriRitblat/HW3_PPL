@@ -93,7 +93,6 @@ export const typeofExp = (exp: A.Parsed, tenv: E.TEnv): Result<T.TExp> =>
     A.isLetrecExp(exp) ? typeofLetrec(exp, tenv) :
     A.isDefineExp(exp) ? typeofDefine(exp, tenv) :
     A.isProgram(exp) ? typeofProgram(exp, tenv) :
-    // TODO: isSetExp(exp) isLitExp(exp)
     makeFailure(`Unknown type: ${format(exp)}`);
 
 // Purpose: Compute the type of a sequence of expressions
@@ -208,15 +207,22 @@ export const typeofLetrec = (exp: A.LetrecExp, tenv: E.TEnv): Result<T.TExp> => 
 // Typing rule:
 //   (define (var : texp) val)
 // TODO - write the true definition
-export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
-    // return Error("TODO");
-    return makeOk(T.makeVoidTExp());
-};
 
+export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
+    const valTE = typeofExp(exp.val, tenv); 
+    const varTE = exp.var.texp;           
+    const constraint = bind(valTE, (valTE: T.TExp) => 
+                          checkEqualType(valTE, varTE, exp));
+    return bind(constraint, _ => makeOk(T.makeVoidTExp()));
+};
 // Purpose: compute the type of a program
 // Typing rule:
 // TODO - write the true definition
-export const typeofProgram = (exp: A.Program, tenv: E.TEnv): Result<T.TExp> => {
-    return makeFailure("TODO");
-};
+export const typeofProgram = (exp: A.Program, tenv: E.TEnv): Result<T.TExp> =>
+    isEmpty(exp.exps) ? makeFailure("Empty program") : 
+    typeofExps(exp.exps, tenv);
+
+export const L5programTypeOf = (concreteExp: string): Result<string> =>
+    bind(A.parseL5(concreteExp), (exp: A.Program) =>
+        bind(typeofProgram(exp, E.makeEmptyTEnv()), T.unparseTExp));
 

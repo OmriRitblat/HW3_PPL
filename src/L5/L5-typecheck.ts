@@ -4,7 +4,7 @@ import { equals, map, zipWith } from 'ramda';
 import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNumExp,
          isPrimOp, isProcExp, isProgram, isStrExp, isVarRef, parseL5Exp, unparse,
          AppExp, BoolExp, DefineExp, Exp, IfExp, LetrecExp, LetExp, NumExp,
-         Parsed, PrimOp, ProcExp, Program, StrExp } from "./L5-ast";
+         Parsed, PrimOp, ProcExp, Program, StrExp, parseL5 } from "./L5-ast";
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp,
@@ -213,11 +213,29 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // Typing rule:
 //   (define (var : texp) val)
 // TODO - write the true definition
-export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> =>
-    isFailure(bind(typeofExp(exp.val,tenv), (x : TExp) => checkEqualType(exp.var.texp,x,exp))) ? makeFailure("the valdec type doesn't fit the val type") : makeOk(makeVoidTExp())
+export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
+    const valTypeResult = typeofExp(exp.val, tenv);
 
+    if (isFailure(valTypeResult)) {
+        return valTypeResult;
+    }
+
+    const typeCheckResult = checkEqualType(exp.var.texp, valTypeResult.value, exp);
+
+    if (isFailure(typeCheckResult)) {
+        return makeFailure("the val-dec type doesn't fit the val type");
+    } else {
+        makeExtendTEnv([exp.var.var],[exp.var.texp],tenv);
+        return makeOk(makeVoidTExp());
+    }
+};
 // Purpose: compute the type of a program
 // Typing rule:
 // TODO - write the true definition
 export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> =>
-    makeFailure("TODO");
+    isEmpty(exp.exps) ? makeFailure("Empty program") : 
+    typeofExps(exp.exps, tenv);
+
+export const L5programTypeof = (concreteExp: string): Result<string> =>
+    bind(parseL5(concreteExp), (exp: Program) =>
+        bind(typeofProgram(exp, makeEmptyTEnv()), unparseTExp));

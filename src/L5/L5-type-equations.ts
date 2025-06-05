@@ -137,6 +137,7 @@ export const makeEquationsFromExp = (exp: A.Exp, pool: Pool): Opt.Optional<Equat
                             Opt.mapv(Res.resultToOptional(TC.typeofPrim(exp)), (right: T.TExp) =>
                                 [makeEquation(left, right)])) :
     // Todo: define, let, letrec, set 
+    A.isDefineExp(exp) ? Opt.mapv(inPool(pool, exp), (left: T.TExp) => [makeEquation(left, T.makeVoidTExp())]) :
     Opt.makeNone();
 
 

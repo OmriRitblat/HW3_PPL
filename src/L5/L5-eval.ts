@@ -78,7 +78,7 @@ const evalCExps = (first: Exp, rest: Exp[], env: Env): Result<Value> =>
 const evalDefineExps = (def: Exp, exps: Exp[]): Result<Value> =>
     isDefineExp(def) ? bind(applicativeEval(def.val, theGlobalEnv), (rhs: Value) => { 
                             globalEnvAddBinding(def.var.var, rhs);
-                            return evalSequence(exps, theGlobalEnv); 
+                            return isEmpty(exps) ? makeOk(undefined) : evalSequence(exps, theGlobalEnv); 
                         }) :
     makeFailure(`Unexpected define: ${format(def)}`);
 
