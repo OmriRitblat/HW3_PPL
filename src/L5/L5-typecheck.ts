@@ -8,23 +8,29 @@ import { isAppExp, isBoolExp, isDefineExp, isIfExp, isLetrecExp, isLetExp, isNum
 import { applyTEnv, makeEmptyTEnv, makeExtendTEnv, TEnv } from "./TEnv";
 import { isProcTExp, makeBoolTExp, makeNumTExp, makeProcTExp, makeStrTExp, makeVoidTExp,
          parseTE, unparseTExp,
-         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp } from "./TExp";
+         BoolTExp, NumTExp, StrTExp, TExp, VoidTExp, 
+         isPairTExp,
+         makePairTExp,makeFreshTVar} from "./TExp";
 import { isEmpty, allT, first, rest, NonEmptyList, List, isNonEmptyList } from '../shared/list';
 import { Result, makeFailure, bind, makeOk, zipWithResult, isFailure } from '../shared/result';
 import { parse as p } from "../shared/parser";
 import { format } from '../shared/format';
 import { env } from 'process';
+import {checkEqualType as ce} from "../L5/L5-typeinference"
 
 // Purpose: Check that type expressions are equivalent
 // as part of a fully-annotated type check process of exp.
 // Return an error if the types are different - true otherwise.
 // Exp is only passed for documentation purposes.
-const checkEqualType = (te1: TExp, te2: TExp, exp: Exp): Result<true> =>
-  equals(te1, te2) ? makeOk(true) :
+const checkEqualType = (te1: TExp, te2: TExp, exp: Exp): Result<true> =>{
+    if(isPairTExp(te1)&&isPairTExp(te2))
+        return ce(te1,te2,exp);
+  return equals(te1, te2) ? makeOk(true) :
   bind(unparseTExp(te1), (te1: string) =>
     bind(unparseTExp(te2), (te2: string) =>
         bind(unparse(exp), (exp: string) => 
             makeFailure<true>(`Incompatible types: ${te1} and ${te2} in ${exp}`))));
+}
 
 // Compute the type of L5 AST exps to TE
 // ===============================================
@@ -81,30 +87,46 @@ const numCompTExp = parseTE('(number * number -> boolean)');
 const boolOpTExp = parseTE('(boolean * boolean -> boolean)');
 
 // Todo: cons, car, cdr, list
-export const typeofPrim = (p: PrimOp): Result<TExp> =>
-    (p.op === '+') ? numOpTExp :
-    (p.op === '-') ? numOpTExp :
-    (p.op === '*') ? numOpTExp :
-    (p.op === '/') ? numOpTExp :
-    (p.op === 'and') ? boolOpTExp :
-    (p.op === 'or') ? boolOpTExp :
-    (p.op === '>') ? numCompTExp :
-    (p.op === '<') ? numCompTExp :
-    (p.op === '=') ? numCompTExp :
-    // Important to use a different signature for each op with a TVar to avoid capture
-    (p.op === 'number?') ? parseTE('(T -> boolean)') :
-    (p.op === 'boolean?') ? parseTE('(T -> boolean)') :
-    (p.op === 'string?') ? parseTE('(T -> boolean)') :
-    (p.op === 'list?') ? parseTE('(T -> boolean)') :
-    (p.op === 'pair?') ? parseTE('(T -> boolean)') :
-    (p.op === 'symbol?') ? parseTE('(T -> boolean)') :
-    (p.op === 'not') ? parseTE('(boolean -> boolean)') :
-    (p.op === 'eq?') ? parseTE('(T1 * T2 -> boolean)') :
-    (p.op === 'string=?') ? parseTE('(T1 * T2 -> boolean)') :
-    (p.op === 'display') ? parseTE('(T -> void)') :
-    (p.op === 'newline') ? parseTE('(Empty -> void)') :
-    makeFailure(`Primitive not yet implemented: ${p.op}`);
-
+export const typeofPrim = (op: PrimOp): Result<TExp> => {
+    const numOpTExp = parseTE('(number * number -> number)');
+    const numCompTExp = parseTE('(number * number -> boolean)');
+    const boolOpTExp = parseTE('(boolean * boolean -> boolean)');
+    const typePredTExp = parseTE('(T -> boolean)');
+    
+    // Special handling for polymorphic primitives with fresh type variables
+    if (op.op === 'cons') {
+        const T1 = makeFreshTVar();
+        const T2 = makeFreshTVar();
+        const pairType = makePairTExp(T1, T2);
+        return makeOk(makeProcTExp([T1, T2], pairType));
+    }
+    
+    if (op.op === 'car') {
+        const T1 = makeFreshTVar();
+        const T2 = makeFreshTVar();
+        const pairType = makePairTExp(T1, T2);
+        return makeOk(makeProcTExp([pairType], T1));
+    }
+    
+    if (op.op === 'cdr') {
+        const T1 = makeFreshTVar();
+        const T2 = makeFreshTVar();
+        const pairType = makePairTExp(T1, T2);
+        return makeOk(makeProcTExp([pairType], T2));
+    }
+    
+    return ['+', '-', '*', '/'].includes(op.op) ? numOpTExp :
+           ['and', 'or'].includes(op.op) ? boolOpTExp :
+           ['>', '<', '='].includes(op.op) ? numCompTExp :
+           ['number?', 'boolean?', 'string?', 'symbol?', 'list?'].includes(op.op) ? typePredTExp :
+           (op.op === 'not') ? parseTE('(boolean -> boolean)') :
+           (op.op === 'eq?') ? parseTE('(T1 * T2 -> boolean)') :
+           (op.op === 'string=?') ? parseTE('(T1 * T2 -> boolean)') :
+           (op.op === 'display') ? parseTE('(T -> void)') :
+           (op.op === 'newline') ? parseTE('(Empty -> void)') :
+           makeFailure(`Primitive not yet implemented: ${op.op}`);
+};
+    
 // Purpose: compute the type of an if-exp
 // Typing rule:
 //   if type<test>(tenv) = boolean
@@ -144,8 +166,8 @@ export const typeofProc = (proc: ProcExp, tenv: TEnv): Result<TExp> => {
 //      type<randn>(tenv) = tn
 // then type<(rator rand1...randn)>(tenv) = t
 // We also check the correct number of arguments is passed.
-export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
-    bind(typeofExp(app.rator, tenv), (ratorTE: TExp) => {
+export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>{
+    return bind(typeofExp(app.rator, tenv), (ratorTE: TExp) => {
         if (! isProcTExp(ratorTE)) {
             return bind(unparseTExp(ratorTE), (rator: string) =>
                         bind(unparse(app), (exp: string) =>
@@ -155,11 +177,11 @@ export const typeofApp = (app: AppExp, tenv: TEnv): Result<TExp> =>
             return bind(unparse(app), (exp: string) => makeFailure<TExp>(`Wrong parameter numbers passed to proc: ${exp}`));
         }
         const constraints = zipWithResult((rand, trand) => bind(typeofExp(rand, tenv), (typeOfRand: TExp) => 
-                                                                checkEqualType(typeOfRand, trand, app)),
+                                                                ce(typeOfRand, trand, app)),
                                           app.rands, ratorTE.paramTEs);
         return bind(constraints, _ => makeOk(ratorTE.returnTE));
-    });
-
+});
+}
 // Purpose: compute the type of a let-exp
 // Typing rule:
 // If   type<val1>(tenv) = t1
@@ -213,29 +235,40 @@ export const typeofLetrec = (exp: LetrecExp, tenv: TEnv): Result<TExp> => {
 // Typing rule:
 //   (define (var : texp) val)
 // TODO - write the true definition
-export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => {
-    const valTypeResult = typeofExp(exp.val, tenv);
+export const typeofDefine = (exp: DefineExp, tenv: TEnv): Result<VoidTExp> => 
+    isFailure(bind(typeofExp(exp.val,tenv), (x : TExp) =>
+        checkEqualType(exp.var.texp,x,exp))) ?
+        makeFailure("the val dec type doesn't fit the val type") : makeOk(makeVoidTExp())
 
-    if (isFailure(valTypeResult)) {
-        return valTypeResult;
-    }
+export const typeOfSequence = (seq: List<Exp>, env: TEnv): Result<TExp> =>
+  isNonEmptyList<Exp>(seq)
+    ? typeOfSequenceFirst(first(seq), rest(seq), env)
+    : makeFailure("Empty sequence");
 
-    const typeCheckResult = checkEqualType(exp.var.texp, valTypeResult.value, exp);
+const typeOfSequenceFirst = ( first: Exp, rest: Exp[], env: TEnv ): Result<TExp> =>
+  isDefineExp(first)
+    ? typeOfDefineExps(first, rest, env)
+    : isEmpty(rest)
+    ? typeofExp(first, env)
+    : bind(typeofExp(first, env), (_) => typeOfSequence(rest, env));
 
-    if (isFailure(typeCheckResult)) {
-        return makeFailure("the val-dec type doesn't fit the val type");
-    } else {
-        makeExtendTEnv([exp.var.var],[exp.var.texp],tenv);
-        return makeOk(makeVoidTExp());
-    }
-};
+const typeOfDefineExps = (
+  def: DefineExp,
+  exps: Exp[],
+  env: TEnv
+): Result<TExp> =>
+  bind(typeofExp(def.val, env), (t: TExp) =>
+    typeOfSequence(exps, makeExtendTEnv([def.var.var], [t], env))
+  );
+
 // Purpose: compute the type of a program
 // Typing rule:
 // TODO - write the true definition
 export const typeofProgram = (exp: Program, tenv: TEnv): Result<TExp> =>
-    isEmpty(exp.exps) ? makeFailure("Empty program") : 
-    typeofExps(exp.exps, tenv);
+  typeOfSequence(exp.exps, tenv);
 
-export const L5programTypeof = (concreteExp: string): Result<string> =>
-    bind(parseL5(concreteExp), (exp: Program) =>
+export const L5programTypeof = (concreteExp: string): Result<string> => {
+    const res =bind(parseL5(concreteExp), (exp: Program) =>
         bind(typeofProgram(exp, makeEmptyTEnv()), unparseTExp));
+    return res;
+}

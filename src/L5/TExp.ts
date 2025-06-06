@@ -46,12 +46,12 @@ export type AtomicTExp = NumTExp | BoolTExp | StrTExp | VoidTExp;
 export const isAtomicTExp = (x: any): x is AtomicTExp =>
     isNumTExp(x) || isBoolTExp(x) || isStrTExp(x) || isVoidTExp(x);
 
-export type CompoundTExp = ProcTExp | TupleTExp;
+export type CompoundTExp = ProcTExp | TupleTExp | PairTExp;
 export const isCompoundTExp = (x: any): x is CompoundTExp => isProcTExp(x) || isTupleTExp(x);
 
-export type NonTupleTExp = AtomicTExp | ProcTExp | TVar;
+export type NonTupleTExp = AtomicTExp | ProcTExp | TVar | PairTExp;
 export const isNonTupleTExp = (x: any): x is NonTupleTExp =>
-    isAtomicTExp(x) || isProcTExp(x) || isTVar(x);
+    isAtomicTExp(x) || isProcTExp(x) || isTVar(x) || isPairTExp(x);
 
 export type NumTExp = { tag: "NumTExp" };
 export const makeNumTExp = (): NumTExp => ({tag: "NumTExp"});
@@ -77,6 +77,11 @@ export const isProcTExp = (x: any): x is ProcTExp => x.tag === "ProcTExp";
 // Uniform access to all components of a ProcTExp
 export const procTExpComponents = (pt: ProcTExp): TExp[] =>
     [...pt.paramTEs, pt.returnTE];
+
+export type PairTExp = {tag: "PairTExp", first: TExp, second: TExp};
+export const isPairTExp = (x: any): x is PairTExp => x.tag === "PairTExp";
+export const makePairTExp = (first : TExp, second : TExp): PairTExp =>
+    ({tag: "PairTExp", first : first, second : second});
 
 export type TupleTExp = NonEmptyTupleTExp | EmptyTupleTExp;
 export const isTupleTExp = (x: any): x is TupleTExp =>
@@ -149,7 +154,7 @@ export const parseTE = (t: string): Result<TExp> =>
 ;; parseTExp('(T * T -> boolean)') => '(proc-te ((tvar T) (tvar T)) bool-te)
 ;; parseTExp('(number -> (number -> number)') => '(proc-te (num-te) (proc-te (num-te) num-te))
 */
-export const parseTExp = (texp: Sexp): Result<TExp> =>
+export const parseTExp = (texp: Sexp): Result<TExp> => 
     (texp === "number") ? makeOk(makeNumTExp()) :
     (texp === "boolean") ? makeOk(makeBoolTExp()) :
     (texp === "void") ? makeOk(makeVoidTExp()) :
@@ -163,9 +168,9 @@ export const parseTExp = (texp: Sexp): Result<TExp> =>
 ;; expected exactly one -> in the list
 ;; We do not accept (a -> b -> c) - must parenthesize
 */
-const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp> => {
+const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp | PairTExp> => {
     const pos = texps.indexOf('->');
-    return (pos === -1)  ? makeFailure(`Procedure type expression without -> - ${format(texps)}`) :
+    return (pos === -1) ? texps[0] === 'Pair' ? bind(parseTExp(texps[1]),(first: TExp)=> bind(parseTExp(texps[2]),(second:TExp) => makeOk(makePairTExp(first,second)))): makeFailure(`Procedure type expression without -> - ${format(texps)}`) :
            (pos === 0) ? makeFailure(`No param types in proc texp - ${format(texps)}`) :
            (pos === texps.length - 1) ? makeFailure(`No return type in proc texp - ${format(texps)}`) :
            (texps.slice(pos + 1).indexOf('->') > -1) ? makeFailure(`Only one -> allowed in a procexp - ${format(texps)}`) :
@@ -178,6 +183,7 @@ const parseCompoundTExp = (texps: Sexp[]): Result<ProcTExp> => {
 ;; Expected structure: <te1> [* <te2> ... * <ten>]?
 ;; Or: Empty
 */
+
 const parseTupleTExp = (texps: Sexp[]): Result<TExp[]> => {
     const isEmptyTuple = (texps: Sexp[]): boolean =>
         (texps.length === 1) && (texps[0] === 'Empty');
@@ -201,6 +207,13 @@ export const unparseTExp = (te: TExp): Result<string> => {
             mapv(mapResult(unparseTExp, rest(paramTes)), (paramTEs: string[]) =>
                 cons(paramTE, chain(te => ['*', te], paramTEs)))) :
         makeOk(["Empty"]);
+    
+        const unparsePair = (x: PairTExp): Result<string[]> =>
+    bind(unparseTExp(x.first), (first: string) =>
+        bind(unparseTExp(x.second), (second: string) =>
+            makeOk(["Pair", first, second])
+        )
+    );
 
     const up = (x?: TExp): Result<string | string[]> =>
         isNumTExp(x) ? makeOk('number') :
@@ -209,6 +222,7 @@ export const unparseTExp = (te: TExp): Result<string> => {
         isVoidTExp(x) ? makeOk('void') :
         isEmptyTVar(x) ? makeOk(x.var) :
         isTVar(x) ? up(tvarContents(x)) :
+        isPairTExp(x) ? unparsePair(x) :
         isProcTExp(x) ? bind(unparseTuple(x.paramTEs), (paramTEs: string[]) =>
                             mapv(unparseTExp(x.returnTE), (returnTE: string) =>
                                 [...paramTEs, '->', returnTE])) :
@@ -216,7 +230,6 @@ export const unparseTExp = (te: TExp): Result<string> => {
         isNonEmptyTupleTExp(x) ? unparseTuple(x.TEs) :
         x === undefined ? makeFailure("Undefined TVar") :
         x;
-
     const unparsed = up(te);
     return mapv(unparsed,
                 (x: string | string[]) => isString(x) ? x :

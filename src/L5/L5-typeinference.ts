@@ -14,11 +14,12 @@ import { format } from "../shared/format";
 // Return an error if the types are not unifiable.
 // Exp is only passed for documentation purposes.
 // te1 can be undefined when it is retrieved from a type variable which is not yet bound.
-const checkEqualType = (te1: T.TExp | undefined, te2: T.TExp, exp: A.Exp): Result<true> =>
+export const checkEqualType = (te1: T.TExp | undefined, te2: T.TExp, exp: A.Exp): Result<true> =>
     te1 === undefined ? bind(T.unparseTExp(te2), (texp: string) => makeFailure(`Incompatible types: undefined - ${format(texp)}`)) :
     T.isTVar(te1) && T.isTVar(te2) ? ((T.eqTVar(te1, te2) ? makeOk(true) : checkTVarEqualTypes(te1, te2, exp))) :
     T.isTVar(te1) ? checkTVarEqualTypes(te1, te2, exp) :
     T.isTVar(te2) ? checkTVarEqualTypes(te2, te1, exp) :
+    T.isPairTExp(te1) && T.isPairTExp(te2) ? checkPairTExp(te1,te2,exp) :
     T.isAtomicTExp(te1) && T.isAtomicTExp(te2) ?
         T.eqAtomicTExp(te1, te2) ? makeOk(true) : bind(T.unparseTExp(te1), (te1: string) =>
                                                     bind(T.unparseTExp(te2), (te2: string) =>
@@ -36,6 +37,18 @@ const checkEqualTypes = (tes1: T.TExp[], tes2: T.TExp[], exp: A.Exp): Result<tru
     return bind(checks, _ => makeOk(true));
 }
 
+const checkPairTExp = (te1: T.PairTExp, te2: T.PairTExp, exp: A.Exp): Result<true> => {
+    const firstCheck = checkEqualType(te1.first, te2.first, exp);
+    console.log("Pair 1: "+ te1.first.tag)
+    console.log("Pair 1: "+ te1.second.tag)
+    console.log("Pair 2: "+ te2.first.tag)
+    console.log("Pair 2: "+ te2.second.tag)
+
+    return bind(firstCheck, (_: true) => {
+        const secondCheck = checkEqualType(te1.second, te2.second, exp);
+        return secondCheck;
+    });
+};
 const checkProcEqualTypes = (te1: T.ProcTExp, te2: T.ProcTExp, exp: A.Exp): Result<true> =>
     te1.paramTEs.length !== te2.paramTEs.length ? bind(T.unparseTExp(te1), (te1: string) =>
                                                     bind(T.unparseTExp(te2), (te2: string) =>
