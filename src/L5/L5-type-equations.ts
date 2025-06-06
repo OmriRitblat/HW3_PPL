@@ -219,7 +219,8 @@ const solve = (equations: Equation[], sub: S.Sub): Res.Result<S.Sub> => {
 // Purpose: Compare the structure of the type expressions of the equation
 const canUnify = (eq: Equation): boolean =>
     T.isProcTExp(eq.left) && T.isProcTExp(eq.right) &&
-    (eq.left.paramTEs.length === eq.right.paramTEs.length);
+    (eq.left.paramTEs.length === eq.right.paramTEs.length) ||
+    (T.isPairTExp(eq.left) && T.isPairTExp(eq.right));
 
 // Signature: splitEquation(equation)
 // Purpose: For an equation with unifyable type expressions,
@@ -231,9 +232,16 @@ const canUnify = (eq: Equation): boolean =>
 //            [ {left:T2, right: (T4 -> T4)},
 //              {left:T3, right: T1)} ]
 // @Pre: isCompoundExp(eq.left) && isCompoundExp(eq.right) && canUnify(eq)
-const splitEquation = (eq: Equation): Equation[] =>
-    (T.isProcTExp(eq.left) && T.isProcTExp(eq.right)) ?
-        R.zipWith(makeEquation,
-                  cons(eq.left.returnTE, eq.left.paramTEs),
-                  cons(eq.right.returnTE, eq.right.paramTEs)) :
-    [];
+const splitEquation = (eq: Equation): Equation[] => {
+    if (T.isProcTExp(eq.left) && T.isProcTExp(eq.right)) {
+        return R.zipWith(makeEquation,
+                         cons(eq.left.returnTE, eq.left.paramTEs),
+                         cons(eq.right.returnTE, eq.right.paramTEs));
+    } else if (T.isPairTExp(eq.left) && T.isPairTExp(eq.right)) {
+        return [
+            makeEquation(eq.left.first, eq.right.first),
+            makeEquation(eq.left.second, eq.right.second)
+        ];
+    }
+    return [];
+};

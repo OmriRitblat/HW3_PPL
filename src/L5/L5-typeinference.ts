@@ -14,40 +14,84 @@ import { format } from "../shared/format";
 // Return an error if the types are not unifiable.
 // Exp is only passed for documentation purposes.
 // te1 can be undefined when it is retrieved from a type variable which is not yet bound.
-export const checkEqualType = (te1: T.TExp | undefined, te2: T.TExp, exp: A.Exp): Result<true> =>
-    te1 === undefined ? bind(T.unparseTExp(te2), (texp: string) => makeFailure(`Incompatible types: undefined - ${format(texp)}`)) :
-    T.isTVar(te1) && T.isTVar(te2) ? ((T.eqTVar(te1, te2) ? makeOk(true) : checkTVarEqualTypes(te1, te2, exp))) :
-    T.isTVar(te1) ? checkTVarEqualTypes(te1, te2, exp) :
-    T.isTVar(te2) ? checkTVarEqualTypes(te2, te1, exp) :
-    T.isPairTExp(te1) && T.isPairTExp(te2) ? checkPairTExp(te1,te2,exp) :
-    T.isAtomicTExp(te1) && T.isAtomicTExp(te2) ?
-        T.eqAtomicTExp(te1, te2) ? makeOk(true) : bind(T.unparseTExp(te1), (te1: string) =>
-                                                    bind(T.unparseTExp(te2), (te2: string) =>
-                                                        makeFailure<true>(`Incompatible atomic types ${te1} - ${te2}`))) :
-    T.isProcTExp(te1) && T.isProcTExp(te2) ? checkProcEqualTypes(te1, te2, exp) :
-    bind(T.unparseTExp(te1), (te1: string) =>
-        bind(T.unparseTExp(te2), (te2: string) =>
-            makeFailure<true>(`Incompatible types structure: ${te1} - ${te2}`)));
+// export const checkEqualType = (te1: T.TExp | undefined, te2: T.TExp, exp: A.Exp): Result<true> =>{
+    
+//     console.log('=====');
+//     console.log(te1? te1.tag :'');
+//     console.log(te2.tag);
+//     return te1 === undefined ? bind(T.unparseTExp(te2), (texp: string) => makeFailure(`Incompatible types: undefined - ${format(texp)}`)) :
+//     T.isTVar(te1) && T.isTVar(te2) ? ((T.eqTVar(te1, te2) ? makeOk(true) : checkTVarEqualTypes(te1, te2, exp))) :
+//     T.isTVar(te1) ? checkTVarEqualTypes(te1, te2, exp) :
+//     T.isTVar(te2) ? checkTVarEqualTypes(te2, te1, exp) :
+//     T.isPairTExp(te1) && T.isPairTExp(te2) ? checkPairTExp(te1,te2,exp) :
+//     T.isAtomicTExp(te1) && T.isAtomicTExp(te2) ?
+//         T.eqAtomicTExp(te1, te2) ? makeOk(true) : bind(T.unparseTExp(te1), (te1: string) =>
+//                                                     bind(T.unparseTExp(te2), (te2: string) =>
+//                                                         makeFailure<true>(`Incompatible atomic types ${te1} - ${te2}`))) :
+//     T.isProcTExp(te1) && T.isProcTExp(te2) ? checkProcEqualTypes(te1, te2, exp) :
+//     bind(T.unparseTExp(te1), (te1: string) =>
+//         bind(T.unparseTExp(te2), (te2: string) =>
+//             makeFailure<true>(`Incompatible types structure: ${te1} - ${te2}`)));}
 
-// Purpose: make two lists of equal length of type expressions equal
-// Return an error if one of the pair of TExps are not compatible - true otherwise.
-// Exp is only passed for documentation purposes.
+// // Purpose: make two lists of equal length of type expressions equal
+// // Return an error if one of the pair of TExps are not compatible - true otherwise.
+// // Exp is only passed for documentation purposes.
 const checkEqualTypes = (tes1: T.TExp[], tes2: T.TExp[], exp: A.Exp): Result<true> => {
     const checks = zipWithResult((te1, te2) => checkEqualType(te1, te2, exp), tes1, tes2);
     return bind(checks, _ => makeOk(true));
 }
-
+export const checkEqualType = (te1: T.TExp | undefined, te2: T.TExp, exp: A.Exp): Result<true> => {
+    console.log("=== checkEqualType L5-typeinference ===");
+    console.log("te1:", te1 ? T.unparseTExp(te1) : "undefined");
+    console.log("te2:", T.unparseTExp(te2));
+    console.log("te1 tag:", te1?.tag);
+    console.log("te2 tag:", te2?.tag);
+    
+    let result: Result<true>;
+    
+    if (te1 === undefined) {
+        result = bind(T.unparseTExp(te2), (texp: string) => makeFailure(`Incompatible types: undefined - ${format(texp)}`));
+    } else if (T.isTVar(te1) && T.isTVar(te2)) {
+        result = T.eqTVar(te1, te2) ? makeOk(true) : checkTVarEqualTypes(te1, te2, exp);
+    } else if (T.isTVar(te1)) {
+        console.log("te1 is TVar, calling checkTVarEqualTypes");
+        result = checkTVarEqualTypes(te1, te2, exp);
+    } else if (T.isTVar(te2)) {
+        console.log("te2 is TVar, calling checkTVarEqualTypes");
+        result = checkTVarEqualTypes(te2, te1, exp);
+    } else if (T.isPairTExp(te1) && T.isPairTExp(te2)) {
+        console.log("Both are PairTExp");
+        result = checkPairTExp(te1, te2, exp);
+    } else if (T.isAtomicTExp(te1) && T.isAtomicTExp(te2)) {
+        result = T.eqAtomicTExp(te1, te2) ? makeOk(true) : 
+            bind(T.unparseTExp(te1), (te1: string) =>
+                bind(T.unparseTExp(te2), (te2: string) =>
+                    makeFailure<true>(`Incompatible atomic types ${te1} - ${te2}`)));
+    } else if (T.isProcTExp(te1) && T.isProcTExp(te2)) {
+        console.log("Both are ProcTExp");
+        result = checkProcEqualTypes(te1, te2, exp);
+    } else {
+        result = bind(T.unparseTExp(te1), (te1: string) =>
+            bind(T.unparseTExp(te2), (te2: string) =>
+                makeFailure<true>(`Incompatible types structure: ${te1} - ${te2}`)));
+    }
+    
+    console.log("checkEqualType result:", result);
+    return result;
+};
 const checkPairTExp = (te1: T.PairTExp, te2: T.PairTExp, exp: A.Exp): Result<true> => {
-    const firstCheck = checkEqualType(te1.first, te2.first, exp);
+    // const firstCheck = checkEqualType(te1.first, te2.first, exp);
     console.log("Pair 1: "+ te1.first.tag)
     console.log("Pair 1: "+ te1.second.tag)
     console.log("Pair 2: "+ te2.first.tag)
     console.log("Pair 2: "+ te2.second.tag)
 
+    const firstCheck = checkEqualType(te1.first, te2.first, exp);
+    
     return bind(firstCheck, (_: true) => {
         const secondCheck = checkEqualType(te1.second, te2.second, exp);
         return secondCheck;
-    });
+    });
 };
 const checkProcEqualTypes = (te1: T.ProcTExp, te2: T.ProcTExp, exp: A.Exp): Result<true> =>
     te1.paramTEs.length !== te2.paramTEs.length ? bind(T.unparseTExp(te1), (te1: string) =>
@@ -58,10 +102,36 @@ const checkProcEqualTypes = (te1: T.ProcTExp, te2: T.ProcTExp, exp: A.Exp): Resu
 // Purpose: check that a type variable matches a type expression
 // Updates the var is needed to refer to te.
 // Exp is only passed for documentation purposes.
-const checkTVarEqualTypes = (tvar: T.TVar, te: T.TExp, exp: A.Exp): Result<true> =>
-    T.tvarIsNonEmpty(tvar) ? checkEqualType(T.tvarContents(tvar), te, exp) :
-    mapv(checkNoOccurrence(tvar, te, exp), _ => { T.tvarSetContents(tvar, te); return true; });
+// const checkTVarEqualTypes = (tvar: T.TVar, te: T.TExp, exp: A.Exp): Result<true> =>
+//     T.tvarIsNonEmpty(tvar) ? checkEqualType(T.tvarContents(tvar), te, exp) :
+//     mapv(checkNoOccurrence(tvar, te, exp), _ => { T.tvarSetContents(tvar, te); return true; });
 
+const checkTVarEqualTypes = (tvar: T.TVar, te: T.TExp, exp: A.Exp): Result<true> => {
+    console.log("=== checkTVarEqualTypes ===");
+    console.log("TVar:", tvar.var);
+    console.log("TVar contents:", T.tvarContents(tvar));
+    console.log("TVar isNonEmpty:", T.tvarIsNonEmpty(tvar));
+    console.log("TE to unify with:", T.unparseTExp(te));
+    console.log("TE tag:", te.tag);
+    
+    if (T.tvarIsNonEmpty(tvar)) {
+        console.log("TVar is non-empty, recursing with contents");
+        const contents = T.tvarContents(tvar);
+        console.log("TVar contents:", contents ? T.unparseTExp(contents) : "undefined");
+        return checkEqualType(contents, te, exp);
+    } else {
+        console.log("TVar is empty, checking occurrence and setting contents");
+        const occurrenceCheck = checkNoOccurrence(tvar, te, exp);
+        console.log("Occurrence check result:", occurrenceCheck);
+        
+        return mapv(occurrenceCheck, (_: true) => { 
+            console.log(`Setting TVar ${tvar.var} to:`, T.unparseTExp(te));
+            T.tvarSetContents(tvar, te); 
+            console.log(`After setting, TVar ${tvar.var} contents:`, T.tvarContents(tvar) ? T.unparseTExp(T.tvarContents(tvar)!) : "undefined");
+            return true; 
+        });
+    }
+};
 // Purpose: when attempting to bind tvar to te - check whether tvar occurs in te.
 // Throws error if a circular reference is found.
 // Exp is only passed for documentation purposes.
@@ -73,6 +143,7 @@ const checkNoOccurrence = (tvar: T.TVar, te: T.TExp, exp: A.Exp): Result<true> =
     const loop = (te1: T.TExp): Result<true> =>
         T.isAtomicTExp(te1) ? makeOk(true) :
         T.isProcTExp(te1) ? checkList(T.procTExpComponents(te1)) :
+        T.isPairTExp(te1) ? checkList([te1.first, te1.second]) :
         T.isTVar(te1) ? 
             (T.eqTVar(te1, tvar) ? bind(A.unparse(exp), (exp: string) => makeFailure(`Occur check error - ${te1.var} - ${tvar.var} in ${format(exp)}`)) : 
              makeOk(true)) :
@@ -221,11 +292,27 @@ export const typeofLetrec = (exp: A.LetrecExp, tenv: E.TEnv): Result<T.TExp> => 
 //   (define (var : texp) val)
 // TODO - write the true definition
 
+// export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
+//     const valTE = typeofExp(exp.val, tenv); 
+//     const varTE = exp.var.texp;           
+//     const constraint = bind(valTE, (valTE: T.TExp) => 
+//                           checkEqualType(valTE, varTE, exp));
+//     return bind(constraint, _ => makeOk(T.makeVoidTExp()));
+// };
 export const typeofDefine = (exp: A.DefineExp, tenv: E.TEnv): Result<T.VoidTExp> => {
     const valTE = typeofExp(exp.val, tenv); 
-    const varTE = exp.var.texp;           
-    const constraint = bind(valTE, (valTE: T.TExp) => 
-                          checkEqualType(valTE, varTE, exp));
+    const varTE = exp.var.texp;
+    
+    // Add debug prints:
+    console.log("=== DEBUG typeofDefine ===");
+    console.log("Variable declared type:", T.unparseTExp(varTE));
+    console.log("Value computed type result:", valTE);
+    
+    const constraint = bind(valTE, (valTE: T.TExp) => {
+        console.log("Value computed type:", T.unparseTExp(valTE));
+        console.log("About to check equality between:", T.unparseTExp(varTE), "and", T.unparseTExp(valTE));
+        return checkEqualType(valTE, varTE, exp);
+    });
     return bind(constraint, _ => makeOk(T.makeVoidTExp()));
 };
 // Purpose: compute the type of a program
